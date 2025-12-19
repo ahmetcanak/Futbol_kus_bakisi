@@ -1,0 +1,14 @@
+# Multi-Player Tracking System - Dependencies
+
+# Deep Learning & Computer Vision
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Scientific Computing
+numpy>=1.23.0
+scipy>=1.10.0
+
+# Utilities
+tqdm>=4.65.0
