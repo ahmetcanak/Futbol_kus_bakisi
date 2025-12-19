@@ -266,7 +266,7 @@ class MultiPlayerTracker:
     def match_players_to_detections(self, detections: List[dict],
                                    frame_width: int,
                                    frame_height: int) -> Tuple[
-        set, set
+        List[Tuple[int, int]], set, set
     ]:
         """
         Match players to detections using Hungarian algorithm.
@@ -277,13 +277,15 @@ class MultiPlayerTracker:
             frame_height: Frame height
 
         Returns:
-            (matched_player_ids, matched_detection_indices)
+            (matched_pairs, matched_player_ids, matched_detection_indices)
+            where matched_pairs is a list of (player_id, detection_idx) tuples
         """
+        matched_pairs = []
         matched_players = set()
         matched_dets = set()
 
         if len(detections) == 0:
-            return matched_players, matched_dets
+            return matched_pairs, matched_players, matched_dets
 
         # Build cost matrix
         cost_matrix, player_ids, det_list = self.build_cost_matrix(
@@ -291,7 +293,7 @@ class MultiPlayerTracker:
         )
 
         if cost_matrix is None:
-            return matched_players, matched_dets
+            return matched_pairs, matched_players, matched_dets
 
         # Solve assignment problem
         row_indices, col_indices = linear_sum_assignment(cost_matrix)
@@ -303,10 +305,11 @@ class MultiPlayerTracker:
             # Check if match is valid (cost threshold)
             if cost < 1e5:
                 player_id = player_ids[row_idx]
+                matched_pairs.append((player_id, col_idx))
                 matched_players.add(player_id)
                 matched_dets.add(col_idx)
 
-        return matched_players, matched_dets
+        return matched_pairs, matched_players, matched_dets
 
     def update_with_detections(self, frame: np.ndarray,
                                detections: List[dict],
@@ -324,36 +327,23 @@ class MultiPlayerTracker:
             frame_height: Frame height
         """
         # Match players to detections
-        matched_players, matched_dets = self.match_players_to_detections(
+        matched_pairs, matched_players, matched_dets = self.match_players_to_detections(
             detections, frame_width, frame_height
         )
 
-        # Update matched players
-        for player_id in matched_players:
-            det_idx = None
-            # Find which detection this player matched to
-            cost_matrix, player_ids, _ = self.build_cost_matrix(
-                detections, frame_width, frame_height
+        # Update matched players using the pairs directly
+        for player_id, det_idx in matched_pairs:
+            det = detections[det_idx]
+            player = self.players[player_id]
+
+            player.update_with_detection(
+                bbox=det["bbox"],
+                center=det["center"],
+                frame_idx=frame_idx,
+                shirt_hist=det["shirt_hist"],
+                pants_hist=det["pants_hist"],
+                hist_alpha=self.config.hist_alpha
             )
-            if cost_matrix is not None:
-                pi = player_ids.index(player_id)
-                for di in matched_dets:
-                    if cost_matrix[pi, di] < 1e5:
-                        det_idx = di
-                        break
-
-            if det_idx is not None:
-                det = detections[det_idx]
-                player = self.players[player_id]
-
-                player.update_with_detection(
-                    bbox=det["bbox"],
-                    center=det["center"],
-                    frame_idx=frame_idx,
-                    shirt_hist=det["shirt_hist"],
-                    pants_hist=det["pants_hist"],
-                    hist_alpha=self.config.hist_alpha
-                )
 
         # Update unmatched players with prediction
         for player_id, player in self.players.items():
